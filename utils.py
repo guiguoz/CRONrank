@@ -218,4 +218,4 @@ def generate_pdf(dfs_dict):
                 pdf.cell(widths[i], row_h, txt, border=1, ln=0, align=align, fill=True)
             pdf.ln(row_h)
 
-    return pdf.output(dest="S").encode("latin-1")
+    return bytes(pdf.output())
