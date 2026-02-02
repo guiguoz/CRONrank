@@ -134,6 +134,30 @@ def add_coureur(nom_complet, genre, categorie_age):
         conn.close()
 
 
+def update_coureur_name(coureur_id, new_name):
+    """Met à jour le nom d'un coureur."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE coureurs SET nom_complet = ? WHERE id = ?",
+        (new_name, coureur_id)
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_coureur_by_id(coureur_id):
+    """Récupère un coureur par son ID avec ses résultats."""
+    query = """
+    SELECT c.id, c.nom_complet, co.nom_course, r.points, r.rang
+    FROM coureurs c
+    LEFT JOIN resultats r ON c.id = r.coureur_id
+    LEFT JOIN courses co ON r.course_id = co.id
+    WHERE c.id = ?
+    """
+    return run_query(query, (coureur_id,))
+
+
 def add_result(course_id, coureur_id, rang, points, categorie_course):
     conn = get_connection()
     cursor = conn.cursor()
@@ -322,6 +346,24 @@ def get_aberrant_points():
     return run_query(query)
 
 
+def get_duplicate_results():
+    """Détecte les doublons (même coureur inscrit plusieurs fois sur la même course)."""
+    query = """
+    SELECT r.id, c.nom_complet, co.nom_course, r.points, r.rang, r.categorie_course, co.id as course_id
+    FROM resultats r
+    JOIN coureurs c ON r.coureur_id = c.id
+    JOIN courses co ON r.course_id = co.id
+    WHERE (r.coureur_id, r.course_id) IN (
+        SELECT coureur_id, course_id
+        FROM resultats
+        GROUP BY coureur_id, course_id
+        HAVING COUNT(*) > 1
+    )
+    ORDER BY c.nom_complet, co.nom_course, r.id
+    """
+    return run_query(query)
+
+
 def fix_aberrant_points():
     """Corrige automatiquement les points aberrants en les recalculant selon le rang."""
     conn = get_connection()
@@ -378,9 +420,11 @@ def get_invalid_coureurs():
     LEFT JOIN resultats r ON c.id = r.coureur_id
     WHERE c.nom_complet IS NULL OR 
           c.nom_complet = '' OR 
-          c.nom_complet = 'nan' OR 
-          c.nom_complet = 'nan nan' OR
-          c.nom_complet LIKE '%nan%'
+          LOWER(TRIM(c.nom_complet)) = 'nan' OR 
+          LOWER(TRIM(c.nom_complet)) = 'nan nan' OR
+          LOWER(c.nom_complet) LIKE 'nan %' OR
+          LOWER(c.nom_complet) LIKE '% nan' OR
+          LOWER(c.nom_complet) LIKE '% nan %'
     GROUP BY c.id, c.nom_complet
     """
     return run_query(query)

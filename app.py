@@ -209,6 +209,25 @@ def show_import():
                 col_fullname3 = st.selectbox("Colonne Nom Prénom 3", cols, index=0)
                 name_map_3 = {"mode": "single", "full": col_fullname3}
 
+            # Coéquipier 4
+            st.markdown("#### Coéquipier 4 (optionnel)")
+            mode4 = st.radio(
+                "Mode noms 4",
+                ["Aucun", "Colonnes séparées", "Une seule colonne (Nom Prénom)"],
+                index=0,
+                horizontal=True,
+                key="mode4",
+            )
+            name_map_4 = None
+            if mode4 == "Colonnes séparées":
+                f1, f2 = st.columns(2)
+                col_prenom4 = f1.selectbox("Prénom 4", cols, index=0)
+                col_nom4 = f2.selectbox("Nom 4", cols, index=0)
+                name_map_4 = {"mode": "split", "prenom": col_prenom4, "nom": col_nom4}
+            elif mode4 == "Une seule colonne (Nom Prénom)":
+                col_fullname4 = st.selectbox("Colonne Nom Prénom 4", cols, index=0)
+                name_map_4 = {"mode": "single", "full": col_fullname4}
+
             if st.button("Analyser l'import"):
                 # Vérifier si le raid existe déjà
                 existing_course = database.run_query(
@@ -226,6 +245,8 @@ def show_import():
                     name_mappings.append(name_map_2)
                 if name_map_3:
                     name_mappings.append(name_map_3)
+                if name_map_4:
+                    name_mappings.append(name_map_4)
 
                 analyze_file(
                     df=df,
@@ -253,21 +274,29 @@ def normalize_name(s: str) -> str:
 
 
 def normalize_category(val):
-    """Normalise les catégories (H -> Homme, F -> Femme, M -> Mixte)."""
+    """Normalise les catégories (H -> Homme, F -> Femme, M -> Mixte).
+    Détecte aussi les mots inclus dans une chaîne (ex: TrotteurHomme -> Homme).
+    """
     if val is None or pd.isna(val):
         return None
-    v = str(val).strip().upper()  # Conversion en majuscules pour simplifier
+    v = str(val).strip().upper()
     if not v:
         return None
     
-    # Détection Homme
+    # Correspondance exacte d'abord
     if v in ["H", "HOMME", "HOMMES", "MASCULIN", "MEN", "MALE"]:
         return "Homme"
-    # Détection Femme  
     if v in ["F", "FEMME", "FEMMES", "DAME", "DAMES", "FÉMININE", "FEMININE", "WOMEN", "FEMALE"]:
         return "Femme"
-    # Détection Mixte
     if v in ["M", "MIXTE", "MIXTES", "MIXED", "MIX"]:
+        return "Mixte"
+    
+    # Détection des mots inclus dans la chaîne (ex: TrotteurHomme, OrienteurFemme)
+    if "HOMME" in v or "MASCULIN" in v or "MEN" in v or "MALE" in v:
+        return "Homme"
+    if "FEMME" in v or "DAME" in v or "FEMININE" in v or "WOMEN" in v or "FEMALE" in v:
+        return "Femme"
+    if "MIXTE" in v or "MIXED" in v:
         return "Mixte"
     
     # Si aucune correspondance, retourner la valeur originale
@@ -1052,37 +1081,82 @@ def show_edition():
     with st.container():
         st.markdown("### 🔧 Maintenance")
         
+        # Vérification préalable pour notification
+        invalid_coureurs = database.get_invalid_coureurs()
+        duplicates = database.get_duplicate_results()
+        aberrant_points = database.get_aberrant_points()
+        
+        total_issues = len(invalid_coureurs) + (0 if duplicates.empty else len(duplicates.groupby(['nom_complet', 'nom_course']))) + len(aberrant_points)
+        
+        if total_issues > 0:
+            st.toast(f"⚠️ {total_issues} problème(s) de données détecté(s) — Voir Nettoyage", icon="🔧")
+        
         with st.expander("🧹 Nettoyage des données invalides"):
             # Nettoyage des coureurs invalides
             st.markdown("**Recherche des coureurs invalides...**")
-            invalid_coureurs = database.get_invalid_coureurs()
+            st.caption("Coureurs avec noms vides, 'nan', ou mal formatés (souvent causé par des cellules vides dans le fichier importé)")
             
             if invalid_coureurs.empty:
                 st.success("✅ Aucun coureur invalide trouvé.")
             else:
-                st.warning(f"⚠️ {len(invalid_coureurs)} coureurs invalides détectés")
-                display_df = invalid_coureurs.copy()
-                display_df.columns = ["ID", "Nom", "Nb Résultats"]
-                st.dataframe(display_df, use_container_width=True, hide_index=True)
+                st.warning(f"⚠️ {len(invalid_coureurs)} coureur(s) invalide(s) détecté(s)")
                 
-                total_resultats = invalid_coureurs['nb_resultats'].sum()
-                st.error(f"🗑️ Suppression : {len(invalid_coureurs)} coureurs + {total_resultats} résultats")
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("❌ Annuler", use_container_width=True, key="cancel_invalid"):
-                        st.info("Opération annulée.")
-                with col2:
-                    if st.button("🗑️ Confirmer", type="primary", use_container_width=True, key="confirm_invalid"):
-                        deleted_count = database.clean_invalid_coureurs()
-                        st.success(f"✅ {deleted_count} coureurs supprimés.")
-                        st.rerun()
+                for _, row in invalid_coureurs.iterrows():
+                    coureur_id = row['id']
+                    nom = row['nom_complet']
+                    nb_res = row['nb_resultats']
+                    
+                    # Déterminer la raison
+                    if nom is None or str(nom).strip() == '':
+                        raison = "Nom vide"
+                    elif 'nan' in str(nom).lower():
+                        raison = "Contient 'nan' (cellule vide à l'import)"
+                    else:
+                        raison = "Format invalide"
+                    
+                    # Récupérer les courses associées
+                    coureur_info = database.get_coureur_by_id(coureur_id)
+                    courses_list = coureur_info['nom_course'].dropna().unique().tolist() if not coureur_info.empty else []
+                    
+                    with st.container():
+                        col1, col2 = st.columns([3, 2])
+                        with col1:
+                            st.markdown(f"**Coureur ID {coureur_id}** — {raison}")
+                            st.caption(f"Nom actuel : `{nom if nom else '(vide)'}` | {nb_res} résultat(s)")
+                            if courses_list:
+                                st.caption(f"Course(s) : {', '.join(courses_list)}")
+                        
+                        with col2:
+                            # Option 1: Modifier le nom
+                            new_name = st.text_input(
+                                "Corriger le nom",
+                                placeholder="Prénom NOM",
+                                key=f"fix_name_{coureur_id}"
+                            )
+                            
+                            col_btn1, col_btn2 = st.columns(2)
+                            with col_btn1:
+                                if st.button("✏️ Modifier", key=f"save_{coureur_id}", disabled=not new_name):
+                                    if new_name.strip():
+                                        database.update_coureur_name(coureur_id, new_name.strip())
+                                        st.success("Nom corrigé !")
+                                        st.rerun()
+                            with col_btn2:
+                                if st.button("🗑️ Supprimer", key=f"del_{coureur_id}", type="secondary"):
+                                    conn = database.get_connection()
+                                    cursor = conn.cursor()
+                                    cursor.execute("DELETE FROM resultats WHERE coureur_id = ?", (coureur_id,))
+                                    cursor.execute("DELETE FROM coureurs WHERE id = ?", (coureur_id,))
+                                    conn.commit()
+                                    conn.close()
+                                    st.rerun()
+                        
+                        st.divider()
             
             st.divider()
             
             # Recherche des points aberrants
             st.markdown("**Recherche des points aberrants...**")
-            aberrant_points = database.get_aberrant_points()
             
             if aberrant_points.empty:
                 st.success("✅ Aucun point aberrant trouvé.")
@@ -1137,21 +1211,73 @@ def show_edition():
                         else:
                             st.info("Aucune modification appliquée.")
             
+            st.divider()
+            
+            # Recherche des doublons
+            st.markdown("**Recherche des doublons...**")
+            st.caption("Même participant inscrit plusieurs fois sur la même course (souvent dû à un double import du fichier)")
+            
+            if duplicates.empty:
+                st.success("✅ Aucun doublon trouvé.")
+            else:
+                # Grouper par coureur + course
+                grouped = duplicates.groupby(['nom_complet', 'nom_course'])
+                nb_doublons = len(grouped)
+                st.warning(f"⚠️ {nb_doublons} cas de doublon(s) détecté(s)")
+                
+                # Collecter tous les IDs à supprimer (garder le premier de chaque groupe)
+                ids_to_delete = []
+                
+                # Affichage en tableau clair
+                display_data = []
+                for (nom, course), group in grouped:
+                    sorted_group = group.sort_values('id')
+                    nb_entries = len(sorted_group)
+                    first = sorted_group.iloc[0]
+                    # Garder le premier ID, marquer les autres pour suppression
+                    ids_to_delete.extend(sorted_group['id'].iloc[1:].tolist())
+                    
+                    display_data.append({
+                        "Participant": nom,
+                        "Course": course,
+                        "Inscriptions": f"{nb_entries}x (doublon !)",
+                        "Entrée conservée": f"Rang {first['rang']}, {first['points']} pts",
+                        "Entrées supprimées": nb_entries - 1
+                    })
+                
+                st.dataframe(display_data, use_container_width=True, hide_index=True)
+                
+                if ids_to_delete:
+                    st.markdown(f"""
+                    **Action proposée :**  
+                    Supprimer **{len(ids_to_delete)} entrée(s) en double** tout en conservant la première inscription de chaque participant.
+                    """)
+                    
+                    if st.button("🗑️ Supprimer les doublons", type="primary"):
+                        progress_bar = st.progress(0, text="Suppression des doublons...")
+                        total = len(ids_to_delete)
+                        for i, rid in enumerate(ids_to_delete):
+                            database.delete_result_by_id(int(rid))
+                            progress_bar.progress((i + 1) / total, text=f"Suppression... {i + 1}/{total}")
+                        progress_bar.progress(1.0, text="Terminé !")
+                        st.success(f"✅ {len(ids_to_delete)} doublon(s) supprimé(s)")
+                        st.rerun()
+            
         with st.expander("💾 Gestion des sauvegardes"):
             col1, col2 = st.columns(2)
             
             with col1:
                 if st.button("💾 Créer sauvegarde maintenant", use_container_width=True):
-                    backup_file = backup.create_backup()
+                    backup_file = backup.create_backup(force=True)
                     if backup_file:
                         st.success(f"✅ Sauvegarde créée : {os.path.basename(backup_file)}")
                     else:
                         st.error("❌ Erreur lors de la sauvegarde")
             
             with col2:
-                if st.button("🗑️ Nettoyer anciennes sauvegardes", use_container_width=True):
-                    backup.cleanup_old_backups(7)  # Garder 7 jours
-                    st.success("✅ Nettoyage effectué")
+                if st.button("🗑️ Supprimer sauvegardes > 7 jours", use_container_width=True):
+                    backup.cleanup_old_backups(7)
+                    st.success("✅ Sauvegardes de plus de 7 jours supprimées")
             
             # Affichage des sauvegardes existantes
             backups = backup.get_backup_status()
@@ -1177,10 +1303,49 @@ def show_edition():
             recent_mods = audit.get_recent_modifications()
             
             if not recent_mods.empty:
-                # Formatage pour affichage
-                display_mods = recent_mods.copy()
-                display_mods['timestamp'] = pd.to_datetime(display_mods['timestamp']).dt.strftime('%d/%m/%Y %H:%M')
-                st.dataframe(display_mods[['timestamp', 'action', 'table_name']], use_container_width=True, hide_index=True)
+                display_data = []
+                for _, mod in recent_mods.iterrows():
+                    timestamp = pd.to_datetime(mod['timestamp']).strftime('%d/%m/%Y %H:%M')
+                    
+                    # Traduire l'action
+                    action_map = {
+                        'UPDATE': '✏️ Modification',
+                        'DELETE': '🗑️ Suppression',
+                        'INSERT': '➕ Ajout'
+                    }
+                    action_label = action_map.get(mod['action'], mod['action'])
+                    
+                    # Traduire la table
+                    table_map = {
+                        'resultats': 'Résultat',
+                        'coureurs': 'Coureur',
+                        'courses': 'Course'
+                    }
+                    table_label = table_map.get(mod['table_name'], mod['table_name'])
+                    
+                    # Construire la description
+                    participant = mod.get('nom_complet') or ""
+                    course = mod.get('nom_course') or ""
+                    circuit = mod.get('circuit') or ""
+                    
+                    details = ""
+                    if participant:
+                        details = participant
+                        if course:
+                            details += f" — {course}"
+                        if circuit:
+                            details += f" ({circuit})"
+                    elif course:
+                        details = f"{course} ({circuit})" if circuit else course
+                    
+                    display_data.append({
+                        "Date": timestamp,
+                        "Action": action_label,
+                        "Type": table_label,
+                        "Détails": details or "-"
+                    })
+                
+                st.dataframe(display_data, use_container_width=True, hide_index=True)
             else:
                 st.info("Aucune modification enregistrée")
         
@@ -1189,9 +1354,34 @@ def show_edition():
             
             if not point_mods.empty:
                 st.markdown("**Dernières modifications de points :**")
+                
+                display_data = []
                 for _, mod in point_mods.iterrows():
                     timestamp = pd.to_datetime(mod['timestamp']).strftime('%d/%m/%Y %H:%M')
-                    st.text(f"• {timestamp} - Résultat ID {mod['record_id']} modifié")
+                    
+                    # Parser old/new values
+                    old_pts = ""
+                    new_pts = ""
+                    try:
+                        if mod['old_values']:
+                            old_data = json.loads(mod['old_values']) if isinstance(mod['old_values'], str) else mod['old_values']
+                            old_pts = old_data.get('points', '?')
+                        if mod['new_values']:
+                            new_data = json.loads(mod['new_values']) if isinstance(mod['new_values'], str) else mod['new_values']
+                            new_pts = new_data.get('points', '?')
+                    except:
+                        pass
+                    
+                    display_data.append({
+                        "Date": timestamp,
+                        "Participant": mod['nom_complet'] or "(supprimé)",
+                        "Course": mod['nom_course'] or "(supprimée)",
+                        "Circuit": mod['circuit'] or "-",
+                        "Catégorie": mod['categorie_course'] or "-",
+                        "Modification": f"{old_pts} → {new_pts} pts"
+                    })
+                
+                st.dataframe(display_data, use_container_width=True, hide_index=True)
             else:
                 st.info("Aucune modification de points enregistrée")
 

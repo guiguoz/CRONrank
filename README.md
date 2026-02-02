@@ -4,13 +4,38 @@ Application de gestion des classements pour les challenges de raids d'orientatio
 
 ## ✨ Fonctionnalités
 
-- **Import des résultats** : Import de fichiers Excel (.xlsx) ou CSV avec détection automatique des doublons
-- **Gestion des challenges** : Création et suivi des saisons (ex: 2025-2026)
-- **Classement dynamique** : Calcul automatique des points et classements par circuit et catégorie
-- **Édition des données** : Modification/suppression des participants et des raids
-- **Export PDF** : Génération de classements au format PDF
-- **Sauvegardes automatiques** : Backup quotidien de la base de données
-- **Historique des modifications** : Audit trail des changements
+### Import des résultats
+- Import de fichiers Excel (.xlsx) ou CSV
+- Support jusqu'à 4 coéquipiers par équipe
+- Détection automatique des doublons et conflits de noms
+- Détection intelligente des catégories (Homme, Femme, Mixte) même dans des formats comme "TrotteurHomme"
+
+### Gestion des données
+- Création et gestion des saisons/challenges (ex: 2025-2026)
+- Ajout, modification et suppression des participants
+- Modification des points directement depuis le classement
+- Gestion des raids (renommage, changement de date, suppression)
+
+### Classement
+- Classement dynamique par circuit et catégorie
+- Calcul automatique des points selon le rang
+- Export PDF par catégorie ou classement complet
+
+### Maintenance & Qualité des données
+- **Détection des coureurs invalides** : noms vides ou mal formatés avec possibilité de correction ou suppression
+- **Détection des doublons** : participants inscrits plusieurs fois sur une même course
+- **Détection des points aberrants** : résultats avec plus de 35 points
+- Notifications automatiques quand des problèmes sont détectés
+
+### Sauvegardes
+- Sauvegarde automatique quotidienne
+- Sauvegarde manuelle à la demande
+- Nettoyage des sauvegardes de plus de 7 jours
+- Conservation de 30 jours en automatique
+
+### Historique
+- Traçabilité complète des modifications (ajouts, modifications, suppressions)
+- Détail des changements de points avec participant, course, circuit et catégorie
 
 ## 🚀 Installation
 
@@ -31,7 +56,7 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-Ou double-cliquez sur `run.bat` (Windows).
+Ou double-cliquez sur `run.bat` (Windows). Le script détecte automatiquement Python et installe les dépendances si nécessaire.
 
 L'application s'ouvre dans votre navigateur à l'adresse `http://localhost:8501`.
 
@@ -39,9 +64,9 @@ L'application s'ouvre dans votre navigateur à l'adresse `http://localhost:8501`
 
 | Page | Description |
 |------|-------------|
-| **Import** | Importer des fichiers de résultats, créer des challenges |
-| **Édition** | Ajouter/modifier des participants, gérer les raids |
-| **Classement** | Consulter les classements, exporter en PDF |
+| **Import** | Importer des fichiers de résultats, créer/supprimer des challenges |
+| **Édition** | Ajouter des participants, gérer les raids, maintenance des données, sauvegardes, historique |
+| **Classement** | Consulter et modifier les classements, exporter en PDF, supprimer des participants |
 
 ## 📁 Structure du projet
 
@@ -54,6 +79,7 @@ L'application s'ouvre dans votre navigateur à l'adresse `http://localhost:8501`
 ├── dashboard.py        # Tableaux de bord et statistiques
 ├── challenge.db        # Base de données SQLite
 ├── requirements.txt    # Dépendances Python
+├── run.bat             # Lanceur Windows
 └── backups/            # Dossier des sauvegardes
 ```
 
@@ -68,10 +94,17 @@ L'application s'ouvre dans votre navigateur à l'adresse `http://localhost:8501`
 ## 📊 Calcul des points
 
 Les points sont attribués automatiquement selon le classement dans la catégorie :
-- 1er : 35 pts
-- 2ème : 32 pts
-- 3ème : 30 pts
-- 4ème+ : décroissant
+
+| Rang | Points |
+|------|--------|
+| 1er | 35 pts |
+| 2ème | 32 pts |
+| 3ème | 30 pts |
+| 4ème | 28 pts |
+| 5ème | 27 pts |
+| 6ème | 26 pts |
+| 7ème-30ème | 31 - rang |
+| 31ème+ | 1 pt |
 
 ## 🔧 Configuration
 

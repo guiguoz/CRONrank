@@ -11,15 +11,19 @@ def ensure_backup_dir():
     if not os.path.exists(BACKUP_DIR):
         os.makedirs(BACKUP_DIR)
 
-def create_backup():
-    """Crée une sauvegarde de la base de données."""
+def create_backup(force=False):
+    """Crée une sauvegarde de la base de données.
+    
+    Args:
+        force: Si True, écrase la sauvegarde existante du jour
+    """
     ensure_backup_dir()
     
     today = date.today().strftime("%Y-%m-%d")
     backup_filename = f"{BACKUP_DIR}/challenge_{today}.db"
     
-    # Éviter les doublons du même jour
-    if os.path.exists(backup_filename):
+    # Éviter les doublons du même jour (sauf si force=True)
+    if os.path.exists(backup_filename) and not force:
         return backup_filename
     
     try:
@@ -66,10 +70,22 @@ def get_backup_status():
             if filename.startswith("challenge_") and filename.endswith(".db"):
                 filepath = os.path.join(BACKUP_DIR, filename)
                 size = os.path.getsize(filepath)
+                
+                # Extraire la date du nom de fichier (challenge_YYYY-MM-DD.db)
+                try:
+                    date_str = filename.replace("challenge_", "").replace(".db", "")
+                    file_date = datetime.strptime(date_str, "%Y-%m-%d")
+                    date_display = file_date.strftime("%d/%m/%Y")
+                except:
+                    date_display = "?"
+                
+                # Heure de modification pour plus de précision
                 mtime = datetime.fromtimestamp(os.path.getmtime(filepath))
+                time_display = mtime.strftime("%H:%M")
+                
                 backups.append({
                     "filename": filename,
-                    "date": mtime.strftime("%d/%m/%Y %H:%M"),
+                    "date": f"{date_display} à {time_display}",
                     "size": f"{size // 1024} Ko"
                 })
     

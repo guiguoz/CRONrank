@@ -58,22 +58,46 @@ def log_modification(action, table_name, record_id=None, old_values=None, new_va
     conn.close()
 
 def get_recent_modifications(limit=50):
-    """Récupère les modifications récentes."""
+    """Récupère les modifications récentes avec détails."""
     query = """
-    SELECT timestamp, action, table_name, record_id, old_values, new_values
-    FROM audit_log
-    ORDER BY timestamp DESC
+    SELECT 
+        a.timestamp, 
+        a.action, 
+        a.table_name, 
+        a.record_id, 
+        a.old_values, 
+        a.new_values,
+        c.nom_complet,
+        co.nom_course,
+        co.circuit
+    FROM audit_log a
+    LEFT JOIN resultats r ON a.record_id = r.id AND a.table_name = 'resultats'
+    LEFT JOIN coureurs c ON r.coureur_id = c.id
+    LEFT JOIN courses co ON r.course_id = co.id
+    ORDER BY a.timestamp DESC
     LIMIT ?
     """
     return database.run_query(query, (limit,))
 
 def get_point_modifications():
-    """Récupère spécifiquement les modifications de points."""
+    """Récupère spécifiquement les modifications de points avec détails complets."""
     query = """
-    SELECT timestamp, action, record_id, old_values, new_values
-    FROM audit_log
-    WHERE table_name = 'resultats' AND action = 'UPDATE'
-    ORDER BY timestamp DESC
+    SELECT 
+        a.timestamp, 
+        a.action, 
+        a.record_id, 
+        a.old_values, 
+        a.new_values,
+        c.nom_complet,
+        co.nom_course,
+        co.circuit,
+        r.categorie_course
+    FROM audit_log a
+    LEFT JOIN resultats r ON a.record_id = r.id
+    LEFT JOIN coureurs c ON r.coureur_id = c.id
+    LEFT JOIN courses co ON r.course_id = co.id
+    WHERE a.table_name = 'resultats' AND a.action = 'UPDATE'
+    ORDER BY a.timestamp DESC
     LIMIT 20
     """
     return database.run_query(query)
